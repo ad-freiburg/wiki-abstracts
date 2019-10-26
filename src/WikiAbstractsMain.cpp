@@ -7,20 +7,64 @@
 
 enum class RetCode { SUCCESS = 0 };
 
-enum TextStage { LBEG,  TEXT, IN_CURL, IN_SQ, IN_H, IN_H_TIT, IN_H_CL};
+enum TextStage { LBEG,  TEXT, IN_CURL, IN_SQ, IN_BR, IN_IT, IN_H, IN_H_TIT, IN_H_CL, IN_TAG};
 
 // _____________________________________________________________________________
-void printAbstract(const char* text) {
+std::string parseSq(const char* str) {
+  std::string ret, type;
+
+  ret = str;
+
+  auto pos = ret.find('|');
+  if (pos != std::string::npos) ret = ret.substr(0, pos);
+
+  pos = ret.find(':');
+  if (pos != std::string::npos) {
+    type = ret.substr(0, pos);
+    ret = ret.substr(pos + 1, std::string::npos);
+
+    if (type == "File") return "";
+    if (type == "Image") return "";
+    if (type == "file") return "";
+    if (type == "image") return "";
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+std::string parseCrl(const char* str) {
+  // TODO: implement AS OF parser
+  return "";
+}
+
+// _____________________________________________________________________________
+std::string parseXml(const char* tag, const char* content) {
+  if (strcmp(tag, "ref") == 0) return "";
+  if (strcmp(tag, "math") == 0) return content;
+  if (strcmp(tag, "var") == 0) return content;
+  return "";
+}
+
+// _____________________________________________________________________________
+std::string parseBr(const char* str) {
+  return "";
+}
+
+// _____________________________________________________________________________
+std::string getAbstract(const char* text) {
+  // TODO: implement AS OF parser
   size_t pos = 0;
+  std::string ret;
 
   TextStage s = LBEG;
   size_t HEAD_D = 0;
-  size_t CURL_D = 0;
-  size_t BOX_D = 0;
-
-  size_t HEAD_BEG = 0;
+  size_t SQ_D = 0;
+  size_t CRL_D = 0;
+  size_t BR_D = 0;
 
   std::string tmp;
+  std::string tmp2;
 
   while (text[pos]) {
     switch (s) {
@@ -31,10 +75,9 @@ void printAbstract(const char* text) {
         } else if (text[pos] == '=') {
           s = IN_H;
           HEAD_D += 1;
-          HEAD_BEG = pos;
           pos++;
           continue;
-        } else if (text[pos] == '*') {
+        } else if (text[pos] == '*' || text[pos] == '#' || text[pos] == ':' || text[pos] == ';'){
           // ignore line
           // pos = strchr(text + pos, '\n');
         }
@@ -70,7 +113,7 @@ void printAbstract(const char* text) {
         if (text[pos] == '=') {
           HEAD_D -= 1;
           if (HEAD_D == 0) {
-            return;
+            return ret;
           }
           pos++;
           continue;
@@ -81,63 +124,156 @@ void printAbstract(const char* text) {
 
       case IN_CURL:
         if (text[pos] == '}' && text[pos+1] == '}') {
-          CURL_D -= 1;
-          if (CURL_D == 0) {
-            s = TEXT;
-          }
-
+          ret += parseCrl(tmp.c_str());
           pos += 2;
+          CRL_D--;
+          if (CRL_D == 0) s = TEXT;
           continue;
-
         } else if (text[pos] == '{' && text[pos+1] == '{') {
-          CURL_D += 1;
+          s = IN_CURL;
+          tmp += "{{";
+          CRL_D++;
           pos += 2;
-          continue;
-        }
-
-        pos++;
-        continue;
-
-      case IN_SQ:
-        if (text[pos] == '|' || text[pos] == ':') {
-          tmp.clear();
-          pos++;
-          continue;
-        } else if (text[pos] == ']' && text[pos+1] == ']') {
-          std::cout << tmp;
-          pos += 2;
-          s = TEXT;
           continue;
         }
         tmp += text[pos];
         pos++;
         continue;
 
+      case IN_SQ:
+        if (text[pos] == ']' && text[pos+1] == ']') {
+          ret += parseSq(tmp.c_str());
+          pos += 2;
+          SQ_D--;
+          if (SQ_D == 0) s = TEXT;
+          continue;
+        } else if (text[pos] == '[' && text[pos+1] == '[') {
+          s = IN_SQ;
+          tmp += "[[";
+          SQ_D++;
+          pos += 2;
+          continue;
+        }
+        tmp += text[pos];
+        pos++;
+        continue;
+
+      case IN_BR:
+        if (text[pos] == ')') {
+          ret += parseBr(tmp.c_str());
+          pos++;
+          BR_D--;
+          if (BR_D == 0) s = TEXT;
+          continue;
+        } else if (text[pos] == '(') {
+          s = IN_BR;
+          tmp += "(";
+          BR_D++;
+          pos++;
+          continue;
+        }
+        tmp += text[pos];
+        pos++;
+        continue;
+
+      case IN_TAG:
+        if (text[pos] == '<' && text[pos+1] == '/') {
+          std::string locTmp;
+          size_t p = pos + 1;
+          while (text[p]) {
+            p++;
+            if (text[p] == '\n') {
+              s = TEXT;
+              tmp.clear();
+              tmp2.clear();
+              break;
+            } else if (text[p] == '>') {
+              pos = p;
+              if (locTmp == tmp) {
+                ret += parseXml(tmp.c_str(), tmp2.c_str());
+                tmp.clear();
+                tmp2.clear();
+                pos = p + 1;
+                s = TEXT;
+                break;
+              }
+            } else {
+              locTmp += text[p];
+            }
+          }
+          continue;
+        } else {
+          tmp2 += text[pos];
+          pos++;
+          continue;
+        }
 
       case TEXT:
         if (text[pos] == '\n') {
-          std::cout << ' ';
+          ret += ' ';
           pos++;
           s = LBEG;
+          continue;
+        } else if (text[pos] == '\'') {
+          pos++;
+          continue;
+        } else if (text[pos] == '<') {
+          s = IN_TAG;
+          tmp.clear();
+          tmp2.clear();
+          size_t p = pos;
+          while (text[p]) {
+            p++;
+            if (text[p] == '\n') {
+              s = TEXT;
+              tmp.clear();
+              tmp2.clear();
+              break;
+            } else if (text[p] == '>') {
+              pos = p;
+              tmp = tmp.substr(0, tmp.find(' '));
+              break;
+            } else if (text[p] == '/' && text[p+1] == '>') {
+              pos = p + 1;
+              tmp.clear();
+              tmp2.clear();
+              s = TEXT;
+              break;
+            } else {
+              tmp += text[p];
+            }
+          }
+
+          pos++;
           continue;
         } else {
           if (text[pos] == '{' && text[pos+1] == '{') {
             s = IN_CURL;
-            CURL_D = 1;
+            CRL_D = 1;
+            tmp.clear();
             pos += 2;
             continue;
           } else if (text[pos] == '[' && text[pos+1] == '[') {
             s = IN_SQ;
+            SQ_D = 1;
             tmp.clear();
             pos += 2;
             continue;
+          } else if (text[pos] == '(') {
+            s = IN_BR;
+            BR_D = 1;
+            tmp.clear();
+            pos += 1;
+            continue;
           }
         }
-        std::cout << text[pos];
+        ret += text[pos];
         pos++;
         continue;
     }
   }
+
+  return ret;
 }
 
 // _____________________________________________________________________________
@@ -157,7 +293,7 @@ int main(int argc, char** argv) {
 
   while (xml.next()) {
     const auto& cur = xml.get();
-    if (pages == 50) break;
+    // if (pages == 50) break;
 
     if (xml.level() == 2 && strcmp(cur.name, "page") == 0) {
       stage = 1;
@@ -173,8 +309,9 @@ int main(int argc, char** argv) {
       if (xml.level() == 4 && strcmp(cur.name, "text") == 0) {
         xml.next();
         const auto& textEl = xml.get();
-        printAbstract(textEl.text);
-        std::cout << "\n";
+        auto abstr = pfxml::file::decode(getAbstract(textEl.text).c_str());
+        abstr = getAbstract(abstr.c_str());
+        std::cout << abstr << "\n";
         pages++;
       }
     }
