@@ -9,18 +9,27 @@ enum class RetCode { SUCCESS = 0 };
 
 enum TextStage { LBEG,  TEXT, IN_CURL, IN_SQ, IN_BR, IN_IT, IN_H, IN_H_TIT, IN_H_CL, IN_TAG};
 
+std::string getAbstract(const char* text);
+
 // _____________________________________________________________________________
 std::string parseSq(const char* str) {
-  std::string ret, type;
+  std::string ret = str;
 
-  ret = str;
+  std::vector<std::string> split;
 
-  auto pos = ret.find('|');
-  if (pos != std::string::npos) ret = ret.substr(0, pos);
+  size_t last = 0;
+  while (last != std::string::npos) {
+    auto pos = ret.find('|', last + 1);
+    split.push_back(ret.substr(last, pos - last));
+    if (pos != std::string::npos) pos++;
+    last = pos;
+  }
 
-  pos = ret.find(':');
+  if (split.size() == 0) return "";
+
+  size_t pos = split[0].find(':');
   if (pos != std::string::npos) {
-    type = ret.substr(0, pos);
+    std::string type = split[0].substr(0, pos);
     ret = ret.substr(pos + 1, std::string::npos);
 
     if (type == "File") return "";
@@ -29,7 +38,7 @@ std::string parseSq(const char* str) {
     if (type == "image") return "";
   }
 
-  return ret;
+  return getAbstract(split.back().c_str());
 }
 
 // _____________________________________________________________________________
@@ -69,7 +78,10 @@ std::string getAbstract(const char* text) {
   while (text[pos]) {
     switch (s) {
       case LBEG:
-        if (std::isspace(text[pos])) {
+        if (text[pos] == '\n') {
+          pos++;
+          continue;
+        } else if (std::isspace(text[pos])) {
           s = TEXT;
           continue;
         } else if (text[pos] == '=') {
@@ -78,8 +90,10 @@ std::string getAbstract(const char* text) {
           pos++;
           continue;
         } else if (text[pos] == '*' || text[pos] == '#' || text[pos] == ':' || text[pos] == ';'){
-          // ignore line
-          // pos = strchr(text + pos, '\n');
+          if (strncmp(text + pos, "#REDIRECT", 9) == 0) return "";
+          if (strncmp(text + pos, "#redirect", 9) == 0) return "";
+          pos++;
+          continue;
         }
         s = TEXT;
         continue;
@@ -160,6 +174,8 @@ std::string getAbstract(const char* text) {
 
       case IN_BR:
         if (text[pos] == ')') {
+          // delete the space before the bracket
+          if (ret.back() == ' ') ret.resize(ret.size() - 1);
           ret += parseBr(tmp.c_str());
           pos++;
           BR_D--;
@@ -210,12 +226,28 @@ std::string getAbstract(const char* text) {
 
       case TEXT:
         if (text[pos] == '\n') {
-          ret += ' ';
+          // avoid double spaces
+          if (ret.back() != ' ') ret += ' ';
           pos++;
           s = LBEG;
           continue;
         } else if (text[pos] == '\'') {
           pos++;
+          continue;
+        } else if (text[pos] == '<' && text[pos+1] == '!' && text[pos+2] == '-' && text[pos+3] == '-') {
+          // comment
+          size_t p = pos + 3;
+          while (true) {
+            p++;
+            if (!text[p]) {
+              pos = p;
+              break;
+            } else if (text[p] == '-' && text[p+1] == '-' && text[p+2] == '>') {
+              pos = p + 3;
+              break;
+            }
+          }
+          s = TEXT;
           continue;
         } else if (text[pos] == '<') {
           s = IN_TAG;
@@ -267,7 +299,8 @@ std::string getAbstract(const char* text) {
             continue;
           }
         }
-        ret += text[pos];
+
+        if (text[pos] != ' ' || ret.back() != ' ') ret += text[pos];
         pos++;
         continue;
     }
@@ -291,9 +324,11 @@ int main(int argc, char** argv) {
   size_t pages = 0;
   size_t stage = 0;
 
+  std::string title;
+
   while (xml.next()) {
     const auto& cur = xml.get();
-    // if (pages == 50) break;
+    // if (pages == 5) break;
 
     if (xml.level() == 2 && strcmp(cur.name, "page") == 0) {
       stage = 1;
@@ -301,7 +336,7 @@ int main(int argc, char** argv) {
       if (xml.level() == 3 && strcmp(cur.name, "title") == 0) {
         xml.next();
         const auto& textEl = xml.get();
-        std::cout << textEl.text << '\t';
+        title = textEl.text;
       } else if (xml.level() == 3 && strcmp(cur.name, "revision") == 0) {
         stage = 2;
       }
@@ -311,8 +346,10 @@ int main(int argc, char** argv) {
         const auto& textEl = xml.get();
         auto abstr = pfxml::file::decode(getAbstract(textEl.text).c_str());
         abstr = getAbstract(abstr.c_str());
-        std::cout << abstr << "\n";
-        pages++;
+        if (abstr.size()) {
+          std::cout << title << '\t' << abstr << "\n";
+          pages++;
+        }
       }
     }
   }
