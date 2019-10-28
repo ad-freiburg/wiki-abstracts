@@ -3,9 +3,10 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <iostream>
+#include <set>
 #include "pfxml.h"
 
-enum class RetCode { SUCCESS = 0 };
+enum class RetCode { SUCCESS = 0, MISSING_WIKI_DUMP = 1 };
 
 enum TextStage {
   LBEG,
@@ -20,36 +21,46 @@ enum TextStage {
   IN_TAG
 };
 
-std::string getAbstract(const char* text, size_t maxParas, bool woBr);
+// namespaces which should be dropped
+static const std::set<std::string> DROP_NS = {
+    "User",
+    "Wikipedia",
+    "File",
+    "MediaWiki",
+    "Template",
+    "Help",
+    "Category",
+    "Portal",
+    "Book",
+    "Draft",
+    "TimedText",
+    "Module",
+    "Education Program",
+    "Gadget",
+    "Gadget definition",
+    "Special",
+    "Media"
+};
+
+std::string parse(const char* text, size_t maxParas, bool woBr);
 
 // _____________________________________________________________________________
 bool usePage(const std::string& tit) {
+  // returns true if a page should be used, based on title
+
   auto nsPos = tit.find(':');
   if (nsPos != std::string::npos) {
     auto ns = tit.substr(0, nsPos);
-    if (ns == "User") return false;
-    if (ns == "Wikipedia") return false;
-    if (ns == "File") return false;
-    if (ns == "MediaWiki") return false;
-    if (ns == "Template") return false;
-    if (ns == "Help") return false;
-    if (ns == "Category") return false;
-    if (ns == "Portal") return false;
-    if (ns == "Book") return false;
-    if (ns == "Draft") return false;
-    if (ns == "TimedText") return false;
-    if (ns == "Module") return false;
-    if (ns == "Education Program") return false;
-    if (ns == "Gadget") return false;
-    if (ns == "Gadget definition") return false;
-    if (ns == "Special") return false;
-    if (ns == "Media") return false;
+    if (DROP_NS.count(ns)) return false;
   }
   return true;
 }
 
 // _____________________________________________________________________________
 std::string parseSSq(const char* str) {
+  // parse a single squared command like [http://google.de], usually used
+  // for external links
+
   std::string ret = str;
 
   std::vector<std::string> split;
@@ -64,11 +75,14 @@ std::string parseSSq(const char* str) {
 
   if (split.size() == 0) return "";
 
-  return getAbstract(split.back().c_str(), 1, true);
+  return parse(split.back().c_str(), 1, true);
 }
 
 // _____________________________________________________________________________
 std::string parseSq(const char* str) {
+  // parse a double squared command like [[Freiburg im Breisgau]], usually used
+  // for internal links
+
   std::string ret = str;
 
   std::vector<std::string> split;
@@ -105,15 +119,15 @@ std::string parseSq(const char* str) {
       ret = ret.substr(0, pos);
     }
 
-    return getAbstract(ret.c_str(), 1, true);
+    return parse(ret.c_str(), 1, true);
   }
 
-  return getAbstract(split.back().c_str(), 1, true);
+  return parse(split.back().c_str(), 1, true);
 }
 
 // _____________________________________________________________________________
 std::pair<std::string, size_t> parseCrl(const char* str) {
-  // TODO: implement AS OF parser
+  // parse a template
 
   if (strcmp(str, "disambiguation") == 0) return {"", 1};
   if (strcmp(str, "DISAMBIGUATION") == 0) return {"", 1};
@@ -135,7 +149,7 @@ std::pair<std::string, size_t> parseCrl(const char* str) {
   }
 
   if (split.size() > 1) {
-    if (split[0] == "math") return {getAbstract(split[1].c_str(), 1, false), 0};
+    if (split[0] == "math") return {parse(split[1].c_str(), 1, false), 0};
   }
 
   return {"", 0};
@@ -143,6 +157,8 @@ std::pair<std::string, size_t> parseCrl(const char* str) {
 
 // _____________________________________________________________________________
 std::string parseXml(const char* tag, const char* content) {
+  // parse xml found in the wikitext
+
   if (strcmp(tag, "ref") == 0) return "";
   if (strcmp(tag, "math") == 0) return content;
   if (strcmp(tag, "var") == 0) return content;
@@ -155,13 +171,12 @@ std::string parseBr(const char* str, bool woBr) {
 
   std::stringstream ret;
   // with a leading space!
-  ret << " (" << getAbstract(str, 1, false) << ")";
+  ret << " (" << parse(str, 1, false) << ")";
   return ret.str();
 }
 
 // _____________________________________________________________________________
-std::string getAbstract(const char* text, size_t maxParas, bool woBr) {
-  // TODO: implement AS OF parser
+std::string parse(const char* text, size_t maxParas, bool woBr) {
   size_t pos = 0;
   std::string ret;
 
@@ -449,7 +464,7 @@ std::string getAbstract(const char* text, size_t maxParas, bool woBr) {
     }
   }
 
-  if (paras > 1) return getAbstract(text, 1, woBr);
+  if (paras > 1) return parse(text, 1, woBr);
   return ret;
 }
 
@@ -460,6 +475,13 @@ int main(int argc, char** argv) {
 
   // initialize randomness
   srand(time(NULL) + rand());  // NOLINT
+
+  if (argc < 2) {
+    std::cerr << "No Wikipedia dump XML file given.\n\n";
+    std::cout << "Usage: \n  " << argv[0] << " <wikipedia dump>" << std::endl;
+
+    return static_cast<int>(RetCode::MISSING_WIKI_DUMP);
+  }
 
   pfxml::file xml(argv[1]);
 
@@ -486,11 +508,13 @@ int main(int argc, char** argv) {
       if (xml.level() == 4 && strcmp(cur.name, "text") == 0) {
         xml.next();
         const auto& textEl = xml.get();
-        auto abstr = pfxml::file::decode(getAbstract(textEl.text, 10, true).c_str());
+        auto abstr = pfxml::file::decode(parse(textEl.text, 10, true).c_str());
 
         // decode two times, because the decoded text may be XML again...
         abstr = pfxml::file::decode(abstr);
-        abstr = getAbstract(abstr.c_str(), 10, false);
+        abstr = parse(abstr.c_str(), 10, false);
+
+        // output if page is used
         if (abstr.size() && usePage(title)) {
           std::cout << pfxml::file::decode(title) << '\t' << abstr << "\n";
           pages++;

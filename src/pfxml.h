@@ -17,6 +17,9 @@
 
 namespace pfxml {
 
+// NOTE: this file has been changed from the original pfxml.h to support
+// HTML entities like &nbsp; which are not part of XML, but used in Wikitext!
+
 static const size_t BUFFER_S = 32 * 1024 * 1024;
 
 enum state {
