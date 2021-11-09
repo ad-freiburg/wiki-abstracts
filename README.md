@@ -1,6 +1,6 @@
 # wiki-abstracts
 
-Hacked-together tool to build cleartext abstracts from Wikipedia articles very fast, given as an Wikipedia XML dump file. Used for the lecture Information Retrieval.
+Hacked-together tool to build cleartext abstracts from Wikipedia articles very fast, given as a Wikipedia XML dump file. Used for the lecture Information Retrieval. This comes without any warranty.
 
 ## Usage
 
@@ -16,7 +16,7 @@ Abstracts are immediately printed to stdout. Processing the entire Wikipedia tak
 ## Features
 
 * Wikitext parser which handles ``[]``, ``[[]]`` and ``{}`` and transforms them to clear text
-* Normal brackets (``()``) are dropped with their content (TODO: make configurable)
+* Normal brackets (``()``) are dropped with their content (*TODO*: make configurable)
 * If a TOC is present, the abstract is the text until the TOC
 * If no TOC is present, the abstract is the text until the first heading
 * If no TOC and no heading is present, the abstract is the first paragraph
