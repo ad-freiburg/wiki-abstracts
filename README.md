@@ -1,6 +1,6 @@
 # wiki-abstracts
 
-Hacked-together tool to build cleartext abstracts from Wikipedia articles, given as an Wikipedia XML dump file.
+Hacked-together tool to build cleartext abstracts from Wikipedia articles very fast, given as an Wikipedia XML dump file. Used for the lecture Information Retrieval.
 
 ## Usage
 
