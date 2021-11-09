@@ -6,7 +6,7 @@
 #include <set>
 #include "pfxml.h"
 
-enum class RetCode { SUCCESS = 0, MISSING_WIKI_DUMP = 1 };
+enum class RetCode { SUCCESS = 0, MISSING_WIKI_DUMP = 1, PARSE_ERROR = 2 };
 
 enum TextStage {
   LBEG,
@@ -478,22 +478,23 @@ int main(int argc, char** argv) {
 
   if (argc < 2) {
     std::cerr << "No Wikipedia dump XML file given.\n\n";
-    std::cout << "Usage: \n  " << argv[0] << " <wikipedia dump>" << std::endl;
-
-    return static_cast<int>(RetCode::MISSING_WIKI_DUMP);
   }
 
+  if (argc < 2 || !strcmp(argv[1], "--help")) {
+    std::cout << "Usage: \n  " << argv[0] << " <wikipedia dump>" << std::endl;
+    return static_cast<int>(argc < 2 ? RetCode::MISSING_WIKI_DUMP
+                                     : RetCode::SUCCESS);
+  }
+
+  try {
   pfxml::file xml(argv[1]);
 
-  size_t pages = 0;
   size_t stage = 0;
 
   std::string title;
 
   while (xml.next()) {
     const auto& cur = xml.get();
-    // if (pages == 5) break;
-
     if (xml.level() == 2 && strcmp(cur.name, "page") == 0) {
       stage = 1;
     } else if (stage == 1) {
@@ -517,10 +518,13 @@ int main(int argc, char** argv) {
         // output if page is used
         if (abstr.size() && usePage(title)) {
           std::cout << pfxml::file::decode(title) << '\t' << abstr << "\n";
-          pages++;
         }
       }
     }
+  }
+  } catch (pfxml::parse_exc e) {
+    std::cerr << e.what() << std::endl;
+    return static_cast <int>(RetCode::PARSE_ERROR);
   }
 
   return static_cast<int>(RetCode::SUCCESS);
