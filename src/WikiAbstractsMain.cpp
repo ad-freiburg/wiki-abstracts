@@ -12,6 +12,7 @@ enum TextStage {
   LBEG,
   TEXT,
   IN_CURL,
+  IN_TABLE,
   IN_SQ,
   IN_SSQ,
   IN_BR,
@@ -182,9 +183,11 @@ std::string parse(const char* text, size_t maxParas, bool woBr) {
 
   TextStage s = LBEG;
   size_t HEAD_D = 0;
+  size_t HEAD_D_ORIG = 0;
   size_t SQ_D = 0;
   size_t SSQ_D = 0;
   size_t CRL_D = 0;
+  size_t TBL_D = 0;
   size_t BR_D = 0;
 
   std::string tmp;
@@ -235,6 +238,7 @@ std::string parse(const char* text, size_t maxParas, bool woBr) {
 
       case IN_H_TIT:
         if (text[pos] == '=') {
+          HEAD_D_ORIG = HEAD_D;
           HEAD_D -= 1;
           s = IN_H_CL;
           pos++;
@@ -253,9 +257,27 @@ std::string parse(const char* text, size_t maxParas, bool woBr) {
           pos++;
           continue;
         } else {
-          s = TEXT;
+          // = wasn't the header closing, but part of the header
+          HEAD_D = HEAD_D_ORIG;
+          s = IN_H_TIT;
+          pos++;
           continue;
         }
+
+      case IN_TABLE:
+        if (text[pos] == '|' && text[pos + 1] == '}') {
+          pos += 2;
+          TBL_D--;
+          if (TBL_D == 0) s = TEXT;
+          continue;
+        } else if (text[pos] == '{' && text[pos + 1] == '|') {
+          s = IN_TABLE;
+          TBL_D++;
+          pos += 2;
+          continue;
+        }
+        pos++;
+        continue;
 
       case IN_CURL:
         if (text[pos] == '}' && text[pos + 1] == '}') {
@@ -434,6 +456,12 @@ std::string parse(const char* text, size_t maxParas, bool woBr) {
           if (text[pos] == '{' && text[pos + 1] == '{') {
             s = IN_CURL;
             CRL_D = 1;
+            tmp.clear();
+            pos += 2;
+            continue;
+          } else if (text[pos] == '{' && text[pos + 1] == '|') {
+            s = IN_TABLE;
+            TBL_D = 1;
             tmp.clear();
             pos += 2;
             continue;
