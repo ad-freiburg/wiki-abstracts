@@ -550,7 +550,7 @@ int main(int argc, char** argv) {
       }
     }
   }
-  } catch (pfxml::parse_exc e) {
+  } catch (const pfxml::parse_exc& e) {
     std::cerr << e.what() << std::endl;
     return static_cast <int>(RetCode::PARSE_ERROR);
   }
